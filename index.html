@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Контроль ПДК воздуха</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f5f7f9; --card:#ffffff; --text:#1b2630; --muted:#5d6b78; --line:#dde3e8;
+  --accent:#1f6feb; --ok:#2e9e62; --warn:#e09a1a; --bad:#d64545;
+  --ok-bg:#e6f5ec; --warn-bg:#fdf1d9; --bad-bg:#fbe5e5; --shadow:0 1px 3px rgba(0,0,0,.08);
+}
+:root[data-theme="dark"]{
+  --bg:#12171c; --card:#1b232b; --text:#e6ecf1; --muted:#98a6b3; --line:#2c3742;
+  --accent:#5aa0ff; --ok:#4cc58a; --warn:#f0b445; --bad:#ff6b6b;
+  --ok-bg:#173326; --warn-bg:#3a2f14; --bad-bg:#3d1c1c; --shadow:none;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12171c; --card:#1b232b; --text:#e6ecf1; --muted:#98a6b3; --line:#2c3742;
+    --accent:#5aa0ff; --ok:#4cc58a; --warn:#f0b445; --bad:#ff6b6b;
+    --ok-bg:#173326; --warn-bg:#3a2f14; --bad-bg:#3d1c1c; --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+h1{font-size:22px;margin:0}
+h2{font-size:17px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:var(--shadow)}
+button,select,input{font:inherit;color:var(--text)}
+button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+select,input[type=date],input[type=text]{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#drop{border:2px dashed var(--line);border-radius:10px;padding:26px 14px;text-align:center;cursor:pointer;color:var(--muted)}
+#drop.over{border-color:var(--accent);background:var(--card);color:var(--text)}
+#drop b{color:var(--text)}
+.files{margin-top:10px;display:grid;gap:8px}
+.file{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.file .nm{font-weight:600}
+.tag{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;margin:2px 4px 2px 0}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.no{background:var(--bad-bg);color:var(--bad)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:10px;padding:10px;border-left-width:5px}
+.tile.ok{border-left-color:var(--ok)} .tile.warn{border-left-color:var(--warn)} .tile.bad{border-left-color:var(--bad)} .tile.none{border-left-color:var(--line);opacity:.6}
+.tile .n{font-weight:700;font-size:16px}
+.tile .big{font-size:22px;font-weight:700;margin:2px 0}
+.tile .st{font-size:12px;font-weight:600}
+.tile.ok .st{color:var(--ok)} .tile.warn .st{color:var(--warn)} .tile.bad .st{color:var(--bad)}
+.tile .sm{font-size:12px;color:var(--muted)}
+.tbl{width:100%;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+td.bad{color:var(--bad);font-weight:600}
+.chartbox{position:relative;height:340px}
+.hm td{text-align:center;padding:5px 2px;min-width:30px;font-size:11px;border:1px solid var(--card)}
+.hm th{text-align:center;padding:3px 2px;font-size:11px}
+.hm td:first-child{min-width:56px;text-align:left;padding-left:6px;font-size:13px}
+.pdk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.pdk label{display:block;font-size:13px;color:var(--muted)}
+.pdk input{width:100%}
+.note{color:var(--muted);font-size:12px;margin-top:6px}
+.empty{color:var(--muted);padding:10px 0}
+@media(max-width:600px){.wrap{padding:10px}.chartbox{height:280px}h1{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Контроль ПДК воздуха</h1>
+      <div class="sub">Сравнение показаний датчиков с ПДК м.р. (СанПиН 1.2.3685-21), мг/м³. Файлы обрабатываются в браузере и никуда не отправляются.</div>
+    </div>
+    <div class="row">
+      <button id="btnSample">Пример данных</button>
+      <button id="btnTheme" title="Сменить тему">Тема</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div id="drop">
+      <div><b>Перетащите файлы сюда</b> или нажмите для выбора</div>
+      <div class="sub">Excel (.xlsx, .xls, .xlsm) и .csv, можно несколько файлов за разные дни</div>
+      <input id="file" type="file" multiple accept=".xlsx,.xls,.xlsm,.csv" hidden>
+    </div>
+    <div id="files" class="files"></div>
+  </div>
+
+  <div class="card" id="filters">
+    <div class="row">
+      <span>Период: с</span><input type="date" id="dFrom">
+      <span>по</span><input type="date" id="dTo">
+      <button id="btnAllPeriod">Весь период</button>
+      <span style="flex:1"></span>
+      <button class="primary" id="btnExport">Скачать отчёт Excel</button>
+      <button id="btnClear">Очистить данные</button>
+    </div>
+    <div class="note" id="info"></div>
+  </div>
+
+  <div class="card"><h2>Сводка по веществам</h2><div class="tiles" id="tiles"></div></div>
+
+  <div class="card"><h2>Минимум и максимум</h2><div class="tbl" id="stats"></div></div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <h2 style="margin:0">График по времени</h2>
+      <select id="chartMode"></select>
+    </div>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <h2 style="margin:0">Превышения</h2>
+      <select id="exSub"></select>
+      <select id="exMode">
+        <option value="periods">Периоды превышений</option>
+        <option value="each">Каждое измерение</option>
+      </select>
+    </div>
+    <div class="tbl" id="exceed"></div>
+    <div class="note">Длительность периода = от первого превышения до последнего + один шаг измерений. Соседние измерения (шаг не более 1,5 от обычного) входят в один период.</div>
+  </div>
+
+  <div class="card">
+    <h2>Карта по часам суток</h2>
+    <div class="sub" style="margin-bottom:8px">Максимальная кратность ПДК в каждый час за выбранный период. Красный — выше ПДК, жёлтый — у границы (0,8–1).</div>
+    <div class="tbl" id="heat"></div>
+  </div>
+
+  <div class="card">
+    <h2>Настройки ПДК м.р., мг/м³</h2>
+    <div class="pdk" id="pdk"></div>
+    <div class="row" style="margin-top:10px"><button id="btnReset">Вернуть значения по умолчанию</button></div>
+    <div class="note">Перед выпуском отчёта сверьте значения с действующей редакцией норматива.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- Вещества ---------- */
+const SUBS = [
+  {id:"CO",   name:"Оксид углерода",  label:"CO",    pdk:5.0,  color:"#e07b39"},
+  {id:"SO2",  name:"Диоксид серы",    label:"SO₂",   pdk:0.5,  color:"#c9b100"},
+  {id:"NO2",  name:"Диоксид азота",   label:"NO₂",   pdk:0.2,  color:"#d64545"},
+  {id:"NO",   name:"Оксид азота",     label:"NO",    pdk:0.4,  color:"#8e5bd6"},
+  {id:"PM25", name:"Частицы PM2,5",   label:"PM2,5", pdk:0.16, color:"#1f9d8f"},
+  {id:"PM10", name:"Частицы PM10",    label:"PM10",  pdk:0.3,  color:"#2f7be0"}
+];
+const BORDER = 0.8;
+const pdk = {};
+SUBS.forEach(s => pdk[s.id] = s.pdk);
+
+/* Определение вещества по заголовку столбца (порядок важен) */
+function detectSub(h){
+  const s = String(h).toLowerCase().replace(/₂/g,"2").replace(/³/g,"3").replace(/\s+/g," ");
+  if (/pm\s*[-_]?\s*2[.,_]?\s*5|взвешенн\S*\s*(част\S*)?\s*2[.,]5|рм\s*2[.,]?5/.test(s)) return "PM25";
+  if (/pm\s*[-_]?\s*10(?!\d)|взвешенн\S*\s*(част\S*)?\s*10(?!\d)|рм\s*10(?!\d)/.test(s)) return "PM10";
+  if (/(^|[^a-z])so\s*2|диоксид\s*серы|сернист/.test(s)) return "SO2";
+  if (/(^|[^a-z])no\s*2|диоксид\s*азота/.test(s)) return "NO2";
+  if (/(^|[^a-z])no([^a-z0-9]|$)|(?<!ди)оксид\s*азота/.test(s)) return "NO";
+  if (/(^|[^a-z])co([^a-z0-9]|$)|(?<!ди)оксид\s*углерода|угарн/.test(s)) return "CO";
+  return null;
+}
+function isDateHeader(h){ return /дата|date|время|time|timestamp|период/i.test(String(h)); }
+
+/* ---------- Разбор даты и времени (время «как в файле», без часовых поясов) ---------- */
+const p2 = n => String(n).padStart(2,"0");
+function fmtT(ms){
+  const d = new Date(ms);
+  return `${p2(d.getUTCDate())}.${p2(d.getUTCMonth()+1)}.${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+}
+function fmtD(ms){ const d=new Date(ms); return `${p2(d.getUTCDate())}.${p2(d.getUTCMonth()+1)}.${d.getUTCFullYear()}`; }
+function isoD(ms){ const d=new Date(ms); return `${d.getUTCFullYear()}-${p2(d.getUTCMonth()+1)}-${p2(d.getUTCDate())}`; }
+function serialToMs(v){ return Math.round((v-25569)*86400)*1000; }
+function parseDT(v){
+  if (v instanceof Date) return Date.UTC(v.getFullYear(),v.getMonth(),v.getDate(),v.getHours(),v.getMinutes(),v.getSeconds());
+  if (typeof v === "number") return v > 20000 ? serialToMs(v) : null;
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return Date.UTC(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0));
+  m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m){ let y=+m[3]; if (y<100) y+=2000; return Date.UTC(y,+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0),+(m[6]||0)); }
+  return null;
+}
+function parseTOD(v){
+  if (typeof v === "number") return Math.round((v-Math.floor(v))*86400)*1000;
+  if (typeof v === "string"){
+    const m = v.trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (m) return ((+m[1])*3600+(+m[2])*60+(+(m[3]||0)))*1000;
+  }
+  return null;
+}
+function parseDateOnly(v){
+  if (typeof v === "number") return v > 20000 ? serialToMs(Math.floor(v)) : null;
+  const t = parseDT(v);
+  return t == null ? null : Math.floor(t/86400000)*86400000;
+}
+/* Число: возвращает {v} / {skip:"empty"|"text"|"neg"} */
+function parseNum(v){
+  if (v == null || (typeof v === "string" && v.trim()==="")) return {skip:"empty"};
+  let x = v;
+  if (typeof v === "string"){
+    x = parseFloat(v.trim().replace(/\s/g,"").replace(",","."));
+    if (!isFinite(x) || !/^[<>]?-?[\d.,]+(e[+-]?\d+)?$/i.test(v.trim().replace(/\s/g,""))) return {skip:"text"};
+  }
+  if (typeof x !== "number" || !isFinite(x)) return {skip:"text"};
+  if (x < 0) return {skip:"neg"};
+  return {v:x};
+}
+
+/* ---------- Данные ---------- */
+const series = {};          // id -> Map(t -> value мг/м³)
+SUBS.forEach(s => series[s.id] = new Map());
+let files = [];             // сведения о загруженных файлах
+let stepMs = 20*60000;
+
+function parseSheetRows(rows){
+  // ищем строку заголовков в первых 30 строках
+  let hi = -1, cols = {}, dateCols = [];
+  for (let r=0; r<Math.min(30, rows.length); r++){
+    const row = rows[r] || [];
+    const c = {}, dc = [];
+    row.forEach((h,i) => {
+      if (h == null) return;
+      const id = detectSub(h);
+      if (id && !(id in c)) c[id] = i;
+      else if (!id && isDateHeader(h)) dc.push(i);
+    });
+    if (Object.keys(c).length){ hi=r; cols=c; dateCols=dc; break; }
+  }
+  if (hi < 0) return null;
+  const header = rows[hi];
+  const unit = {};
+  Object.keys(cols).forEach(id => { unit[id] = /мкг|µg|μg|ug/i.test(String(header[cols[id]])) ? 0.001 : 1; });
+  // столбцы даты/времени
+  let dCol = null, tCol = null;
+  const dateOnlyCols = dateCols.filter(i => /дата|date/i.test(header[i]) && !/врем|time/i.test(header[i]));
+  const timeOnlyCols = dateCols.filter(i => /врем|time/i.test(header[i]) && !/дата|date/i.test(header[i]));
+  if (dateOnlyCols.length && timeOnlyCols.length){ dCol = dateOnlyCols[0]; tCol = timeOnlyCols[0]; }
+  else if (dateCols.length) dCol = dateCols[0];
+  else dCol = 0;
+  const res = {pts:{}, rows:0, bad:0, skipped:{empty:0,text:0,neg:0}, found:Object.keys(cols)};
+  Object.keys(cols).forEach(id => res.pts[id] = []);
+  for (let r=hi+1; r<rows.length; r++){
+    const row = rows[r];
+    if (!row || row.every(x => x == null || x === "")) continue;
+    let t;
+    if (tCol != null){
+      const d0 = parseDateOnly(row[dCol]), tod = parseTOD(row[tCol]);
+      t = d0 != null && tod != null ? d0 + tod : null;
+    } else {
+      t = parseDT(row[dCol]);
+      if (t == null && dCol !== 0) t = parseDT(row[0]);
+    }
+    if (t == null){ res.bad++; continue; }
+    res.rows++;
+    for (const id of res.found){
+      const n = parseNum(row[cols[id]]);
+      if (n.skip){ res.skipped[n.skip]++; continue; }
+      res.pts[id].push([t, n.v * unit[id]]);
+    }
+  }
+  return res;
+}
+
+function parseCSV(text){
+  const first = text.split(/\r?\n/).slice(0,30).join("\n");
+  const cnt = ch => (first.match(new RegExp(ch==="\t"?"\t":"\\"+ch,"g"))||[]).length;
+  const delim = [";","\t",","].sort((a,b)=>cnt(b)-cnt(a))[0];
+  return text.split(/\r?\n/).map(line => {
+    const out=[]; let cur="", q=false;
+    for (const ch of line){
+      if (ch === '"') q = !q;
+      else if (ch === delim && !q){ out.push(cur); cur=""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map(x => x.trim());
+  });
+}
+
+async function loadFile(file){
+  const info = {name:file.name, sheets:[], found:[], rows:0, bad:0, skipped:{empty:0,text:0,neg:0}, error:null};
+  try{
+    const buf = await file.arrayBuffer();
+    let sheets = [];
+    if (/\.csv$/i.test(file.name)){
+      let text = new TextDecoder("utf-8").decode(buf);
+      if (text.includes(String.fromCharCode(65533))) text = new TextDecoder("windows-1251").decode(buf);
+      sheets.push({name:"csv", rows:parseCSV(text)});
+    } else {
+      const wb = XLSX.read(buf, {type:"array"});
+      wb.SheetNames.forEach(n => sheets.push({name:n, rows:XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:null})}));
+    }
+    for (const sh of sheets){
+      const res = parseSheetRows(sh.rows);
+      if (!res) continue;
+      info.sheets.push(sh.name);
+      res.found.forEach(id => { if (!info.found.includes(id)) info.found.push(id); });
+      info.rows += res.rows; info.bad += res.bad;
+      ["empty","text","neg"].forEach(k => info.skipped[k] += res.skipped[k]);
+      for (const id of res.found) for (const [t,v] of res.pts[id]) series[id].set(t, v);
+    }
+    if (!info.sheets.length) info.error = "Не найдена строка заголовков с названиями веществ (первые 30 строк каждого листа).";
+  } catch(e){ info.error = "Не удалось прочитать файл: " + e.message; }
+  files.push(info);
+}
+
+/* ---------- Расчёты ---------- */
+let view = {};   // id -> {pts:[{t,v,r}], stats, episodes}
+function getRange(){
+  const f = document.getElementById("dFrom").value, t = document.getElementById("dTo").value;
+  const from = f ? Date.parse(f+"T00:00:00Z") : -Infinity;
+  const to = t ? Date.parse(t+"T00:00:00Z") + 86400000 : Infinity;
+  return {from,to};
+}
+function median(a){ const s=[...a].sort((x,y)=>x-y); return s.length ? s[Math.floor(s.length/2)] : 0; }
+
+function compute(){
+  const {from,to} = getRange();
+  const diffs = [];
+  view = {};
+  for (const s of SUBS){
+    const pts = [...series[s.id].entries()].filter(([t]) => t>=from && t<to).sort((a,b)=>a[0]-b[0])
+      .map(([t,v]) => ({t, v, r: v / pdk[s.id]}));
+    for (let i=1;i<pts.length;i++){ const d=pts[i].t-pts[i-1].t; if (d>0 && d<=3600000) diffs.push(d); }
+    view[s.id] = {pts};
+  }
+  stepMs = diffs.length ? median(diffs) : 20*60000;
+  for (const s of SUBS){
+    const pts = view[s.id].pts;
+    if (!pts.length){ view[s.id].stats = null; view[s.id].episodes = []; continue; }
+    let mn=pts[0], mx=pts[0], sum=0, exc=0;
+    for (const p of pts){ if (p.v<mn.v) mn=p; if (p.v>mx.v) mx=p; sum+=p.v; if (p.r>1) exc++; }
+    const eps = [];
+    let cur = null;
+    for (const p of pts){
+      if (p.r > 1){
+        if (cur && p.t - cur.end <= stepMs*1.5){ cur.end=p.t; cur.n++; if (p.v>cur.max.v) cur.max=p; }
+        else { cur = {start:p.t, end:p.t, n:1, max:p}; eps.push(cur); }
+      }
+    }
+    eps.forEach(e => e.dur = e.end - e.start + stepMs);
+    view[s.id].episodes = eps;
+    view[s.id].stats = {
+      n:pts.length, min:mn, max:mx, avg:sum/pts.length, maxR:mx.r, exc,
+      excShare:exc/pts.length, excDur:eps.reduce((a,e)=>a+e.dur,0),
+      status: mx.r>1 ? "bad" : mx.r>=BORDER ? "warn" : "ok"
+    };
+  }
+}
+
+/* ---------- Форматирование ---------- */
+function fmt(x, d=3){ return x==null ? "—" : x.toLocaleString("ru-RU",{maximumFractionDigits:d}); }
+function fmtDur(ms){
+  const m = Math.round(ms/60000);
+  if (m < 60) return m + " мин";
+  const h = Math.floor(m/60), r = m%60;
+  return h + " ч" + (r ? " " + r + " мин" : "");
+}
+const STATUS = {ok:"Норма", warn:"У границы", bad:"Выше ПДК"};
+const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const $ = id => document.getElementById(id);
+
+/* ---------- Отрисовка ---------- */
+function renderFiles(){
+  $("files").innerHTML = files.map(f => {
+    if (f.error) return `<div class="file"><span class="nm">${esc(f.name)}</span><br><span class="tag no">${esc(f.error)}</span></div>`;
+    const ok = SUBS.filter(s => f.found.includes(s.id)).map(s => `<span class="tag ok">${s.label}</span>`).join("");
+    const no = SUBS.filter(s => !f.found.includes(s.id)).map(s => `<span class="tag no">${s.label}</span>`).join("");
+    const sk = f.skipped.empty + f.skipped.text + f.skipped.neg;
+    return `<div class="file"><span class="nm">${esc(f.name)}</span> · строк с данными: ${f.rows}
+      <br>Найдены: ${ok||"—"} &nbsp; Не найдены: ${no||"—"}
+      <br><span class="sub">Пропущено значений: ${sk} (пустых ${f.skipped.empty}, текстовых ${f.skipped.text}, отрицательных ${f.skipped.neg})${f.bad?`; строк без распознанного времени: ${f.bad}`:""}</span></div>`;
+  }).join("");
+}
+
+function renderTiles(){
+  $("tiles").innerHTML = SUBS.map(s => {
+    const st = view[s.id].stats;
+    if (!st) return `<div class="tile none"><div class="n">${s.label}</div><div class="sub">нет данных</div></div>`;
+    return `<div class="tile ${st.status}">
+      <div class="n">${s.label} <span class="sub">${s.name}</span></div>
+      <div class="big">${fmt(st.maxR,2)} ПДК</div>
+      <div class="st">${STATUS[st.status]}</div>
+      <div class="sm">Превышений: ${st.exc}${st.exc ? ", всего " + fmtDur(st.excDur) : ""}</div>
+      <div class="sm">ПДК м.р. ${fmt(pdk[s.id])} мг/м³</div></div>`;
+  }).join("");
+}
+
+function renderStats(){
+  const rows = SUBS.filter(s => view[s.id].stats).map(s => {
+    const st = view[s.id].stats;
+    return `<tr><td>${s.label}</td><td>${fmt(st.min.v)}</td><td>${fmtT(st.min.t)}</td><td>${fmt(st.max.v)}</td><td>${fmtT(st.max.t)}</td>
+      <td>${fmt(st.avg)}</td><td class="${st.maxR>1?"bad":""}">${fmt(st.maxR,2)}</td><td>${fmt(st.excShare*100,1)} %</td><td>${st.n}</td></tr>`;
+  }).join("");
+  $("stats").innerHTML = rows
+    ? `<table><tr><th>Вещество</th><th>Минимум</th><th>Время мин.</th><th>Максимум</th><th>Время макс.</th><th>Среднее</th><th>Макс. кратность</th><th>Доля превышений</th><th>Измерений</th></tr>${rows}</table>`
+    : `<div class="empty">Загрузите файл или нажмите «Пример данных».</div>`;
+}
+
+let chart = null;
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function renderChart(){
+  const mode = $("chartMode").value;
+  const present = SUBS.filter(s => view[s.id].pts.length);
+  if (chart){ chart.destroy(); chart = null; }
+  if (!present.length) return;
+  const all = mode === "all";
+  const list = all ? present : present.filter(s => s.id === mode);
+  if (!list.length) return;
+  const bad = css("--bad");
+  const datasets = list.map(s => ({
+    label: s.label + (all ? " (доли ПДК)" : ", мг/м³"),
+    data: view[s.id].pts.map(p => ({x:p.t, y: all ? p.r : p.v, over:p.r>1})),
+    borderColor: s.color, backgroundColor: s.color, borderWidth:1.5, tension:0,
+    pointRadius: c => c.raw && c.raw.over ? 3.5 : 0,
+    pointBackgroundColor: c => c.raw && c.raw.over ? bad : s.color,
+    pointBorderColor: c => c.raw && c.raw.over ? bad : s.color
+  }));
+  const xs = list.flatMap(s => view[s.id].pts.map(p => p.t));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const limit = all ? 1 : pdk[list[0].id];
+  datasets.push({label:"ПДК м.р.", data:[{x:x0,y:limit},{x:x1,y:limit}], borderColor:bad, borderDash:[6,4], borderWidth:1.5, pointRadius:0});
+  const grid = css("--line"), txt = css("--muted");
+  chart = new Chart($("chart"), {
+    type:"line", data:{datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false, parsing:false,
+      interaction:{mode:"nearest", intersect:false},
+      scales:{
+        x:{type:"linear", min:x0, max:x1, grid:{color:grid}, ticks:{color:txt, maxTicksLimit:8, callback:v => fmtT(v)}},
+        y:{beginAtZero:true, grid:{color:grid}, ticks:{color:txt}, title:{display:true, text: all ? "доли ПДК м.р." : "мг/м³", color:txt}}
+      },
+      plugins:{
+        legend:{labels:{color:txt}},
+        tooltip:{callbacks:{title:items => fmtT(items[0].parsed.x), label:c => `${c.dataset.label}: ${fmt(c.parsed.y)}`}}
+      }
+    }
+  });
+}
+
+function renderExceed(){
+  const f = $("exSub").value, mode = $("exMode").value;
+  const subs = SUBS.filter(s => (f==="all" || f===s.id) && view[s.id].pts.length);
+  let html = "";
+  if (mode === "periods"){
+    const rows = subs.flatMap(s => view[s.id].episodes.map(e => ({s,e}))).sort((a,b) => a.e.start-b.e.start);
+    html = rows.length
+      ? `<table><tr><th>Вещество</th><th>Начало</th><th>Последнее измерение</th><th>Длительность</th><th>Максимум, мг/м³</th><th>Кратность</th><th>Время максимума</th></tr>` +
+        rows.map(({s,e}) => `<tr><td>${s.label}</td><td>${fmtT(e.start)}</td><td>${fmtT(e.end)}</td><td>${fmtDur(e.dur)}</td><td class="bad">${fmt(e.max.v)}</td><td class="bad">${fmt(e.max.r,2)}</td><td>${fmtT(e.max.t)}</td></tr>`).join("") + `</table>`
+      : `<div class="empty">Превышений ПДК м.р. нет.</div>`;
+  } else {
+    const rows = subs.flatMap(s => view[s.id].pts.filter(p => p.r>1).map(p => ({s,p}))).sort((a,b) => a.p.t-b.p.t);
+    const shown = rows.slice(0, 500);
+    html = rows.length
+      ? `<table><tr><th>Вещество</th><th>Время</th><th>Значение, мг/м³</th><th>Кратность</th></tr>` +
+        shown.map(({s,p}) => `<tr><td>${s.label}</td><td>${fmtT(p.t)}</td><td class="bad">${fmt(p.v)}</td><td class="bad">${fmt(p.r,2)}</td></tr>`).join("") + `</table>` +
+        (rows.length>shown.length ? `<div class="note">Показаны первые ${shown.length} из ${rows.length}. Полный список — в отчёте Excel.</div>` : "")
+      : `<div class="empty">Превышений ПДК м.р. нет.</div>`;
+  }
+  $("exceed").innerHTML = html;
+}
+
+function cellColor(r){
+  if (r == null) return {bg:"transparent", fg:"var(--muted)"};
+  if (r > 1) return {bg:"#d64545", fg:"#fff"};
+  if (r >= BORDER) return {bg:"#f0a73a", fg:"#1b2630"};
+  return {bg:`rgba(46,160,100,${0.12+0.45*r})`, fg:"var(--text)"};
+}
+function renderHeat(){
+  const subs = SUBS.filter(s => view[s.id].pts.length);
+  if (!subs.length){ $("heat").innerHTML = `<div class="empty">Нет данных.</div>`; return; }
+  let h = `<table class="hm"><tr><th></th>${Array.from({length:24},(_,i)=>`<th>${i}</th>`).join("")}</tr>`;
+  for (const s of subs){
+    const mx = Array(24).fill(null);
+    for (const p of view[s.id].pts){ const hr = new Date(p.t).getUTCHours(); if (mx[hr]==null || p.r>mx[hr]) mx[hr]=p.r; }
+    h += `<tr><td>${s.label}</td>` + mx.map(r => { const c=cellColor(r); return `<td style="background:${c.bg};color:${c.fg}" title="${r==null?"нет данных":fmt(r,2)+" ПДК"}">${r==null?"":fmt(r,2)}</td>`; }).join("") + `</tr>`;
+  }
+  $("heat").innerHTML = h + `</table>`;
+}
+
+function renderAll(){
+  compute();
+  const has = SUBS.some(s => series[s.id].size);
+  const allT = SUBS.flatMap(s => view[s.id].pts.map(p => p.t));
+  $("info").textContent = allT.length
+    ? `Шаг измерений: ~${Math.round(stepMs/60000)} мин. Данные за ${fmtD(Math.min(...allT))} — ${fmtD(Math.max(...allT))}.`
+    : (has ? "В выбранном периоде нет данных." : "");
+  renderFiles(); renderTiles(); renderStats(); renderChart(); renderExceed(); renderHeat();
+}
+
+/* Границы периода по всем данным */
+function setFullPeriod(){
+  const ts = SUBS.flatMap(s => [...series[s.id].keys()]);
+  if (!ts.length){ $("dFrom").value=""; $("dTo").value=""; return; }
+  let a=Infinity,b=-Infinity; for (const t of ts){ if(t<a)a=t; if(t>b)b=t; }
+  $("dFrom").value = isoD(a); $("dTo").value = isoD(b);
+}
+
+/* ---------- Отчёт Excel ---------- */
+async function exportXlsx(){
+  const wb = XLSX.utils.book_new();
+  const subs = SUBS.filter(s => view[s.id].stats);
+  const sum = [["Вещество","ПДК м.р., мг/м³","Минимум","Время минимума","Максимум","Время максимума","Среднее","Макс. кратность","Статус","Измерений","Превышений","Доля превышений, %","Суммарная длительность превышений"]];
+  subs.forEach(s => { const st=view[s.id].stats;
+    sum.push([s.label,pdk[s.id],st.min.v,fmtT(st.min.t),st.max.v,fmtT(st.max.t),st.avg,+st.maxR.toFixed(3),STATUS[st.status],st.n,st.exc,+(st.excShare*100).toFixed(2),fmtDur(st.excDur)]); });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sum), "Сводка");
+
+  const per = [["Вещество","Начало","Последнее измерение","Длительность","Максимум, мг/м³","Кратность","Время максимума"]];
+  subs.flatMap(s => view[s.id].episodes.map(e => ({s,e}))).sort((a,b)=>a.e.start-b.e.start)
+    .forEach(({s,e}) => per.push([s.label,fmtT(e.start),fmtT(e.end),fmtDur(e.dur),e.max.v,+e.max.r.toFixed(3),fmtT(e.max.t)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(per), "Периоды превышений");
+
+  const each = [["Вещество","Время","Значение, мг/м³","ПДК м.р.","Кратность"]];
+  subs.flatMap(s => view[s.id].pts.filter(p=>p.r>1).map(p=>({s,p}))).sort((a,b)=>a.p.t-b.p.t)
+    .forEach(({s,p}) => each.push([s.label,fmtT(p.t),p.v,pdk[s.id],+p.r.toFixed(3)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(each), "Все превышения");
+
+  const times = [...new Set(subs.flatMap(s => view[s.id].pts.map(p=>p.t)))].sort((a,b)=>a-b);
+  const maps = {}; subs.forEach(s => maps[s.id] = new Map(view[s.id].pts.map(p => [p.t,p])));
+  const data = [["Время", ...subs.map(s=>s.label+", мг/м³"), ...subs.map(s=>s.label+", кратность")]];
+  times.forEach(t => data.push([fmtT(t), ...subs.map(s => maps[s.id].has(t) ? maps[s.id].get(t).v : null), ...subs.map(s => maps[s.id].has(t) ? +maps[s.id].get(t).r.toFixed(3) : null)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Данные");
+  const fname = "otchet_PDK_" + isoD(Date.now()) + ".xlsx";
+  const buf = XLSX.write(wb, {bookType:"xlsx", type:"array"});
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch(e){}
+  if (dl){
+    try { await dl.save({filename:fname, data:buf}); }
+    catch(e){ if (!e || e.code !== "declined") alert("Не удалось сохранить отчёт: " + (e && e.message || e)); }
+  } else {
+    XLSX.writeFile(wb, fname);
+  }
+}
+
+/* ---------- Пример данных (выдуманные) ---------- */
+function loadSample(){
+  clearData();
+  let seed = 7; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+  const day0 = Date.UTC(2026,8,1);
+  const base = {CO:1.0, SO2:0.08, NO2:0.07, NO:0.06, PM25:0.05, PM10:0.1};
+  const peaks = {NO2:[8,18,0.28], NO:[8,18,0.4], CO:[8,18,5.2], PM10:[14,4,0.28], PM25:[14,4,0.1], SO2:[3,5,0.45]};
+  for (let d=0; d<2; d++){
+    for (let i=0; i<72; i++){
+      const t = day0 + d*86400000 + i*20*60000, hr = i/3;
+      SUBS.forEach(s => {
+        let v = base[s.id]*(0.7+0.6*rnd());
+        const [c,w,h] = peaks[s.id];
+        const bump = Math.exp(-Math.pow((hr-c)/w*(w>5?2:1.2),2)) * (d===0 ? 1 : 0.7);
+        v += (h-base[s.id]) * bump * (0.85+0.3*rnd()) * (s.id==="SO2" ? 0.4 : 1);
+        series[s.id].set(t, Math.max(0, +v.toFixed(3)));
+      });
+    }
+  }
+  files.push({name:"Пример данных (выдуманные), 2 суток", sheets:["пример"], found:SUBS.map(s=>s.id), rows:144, bad:0, skipped:{empty:0,text:0,neg:0}, error:null});
+  setFullPeriod(); renderAll();
+}
+function clearData(){
+  SUBS.forEach(s => series[s.id].clear());
+  files = []; setFullPeriod();
+}
+
+/* ---------- Интерфейс ---------- */
+function buildUI(){
+  $("chartMode").innerHTML = `<option value="all">Все вещества в долях ПДК</option>` + SUBS.map(s => `<option value="${s.id}">${s.label}, мг/м³</option>`).join("");
+  $("exSub").innerHTML = `<option value="all">Все вещества</option>` + SUBS.map(s => `<option value="${s.id}">${s.label}</option>`).join("");
+  $("pdk").innerHTML = SUBS.map(s => `<div><label>${s.label} — ${s.name}</label><input type="text" inputmode="decimal" data-id="${s.id}" value="${String(s.pdk).replace(".",",")}"></div>`).join("");
+  $("pdk").addEventListener("change", e => {
+    const v = parseFloat(String(e.target.value).replace(",","."));
+    const id = e.target.dataset.id;
+    if (v > 0 && isFinite(v)) pdk[id] = v; else e.target.value = String(pdk[id]).replace(".",",");
+    renderAll();
+  });
+  $("btnReset").onclick = () => {
+    SUBS.forEach(s => pdk[s.id] = s.pdk);
+    document.querySelectorAll("#pdk input").forEach(i => i.value = String(pdk[i.dataset.id]).replace(".",","));
+    renderAll();
+  };
+  const drop = $("drop"), inp = $("file");
+  drop.onclick = () => inp.click();
+  inp.onchange = () => handleFiles(inp.files);
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+  $("btnSample").onclick = loadSample;
+  $("btnClear").onclick = () => { clearData(); renderAll(); };
+  $("btnAllPeriod").onclick = () => { setFullPeriod(); renderAll(); };
+  $("btnExport").onclick = () => { if (SUBS.some(s => view[s.id].stats)) exportXlsx(); else alert("Нет данных для отчёта."); };
+  ["dFrom","dTo"].forEach(id => $(id).onchange = renderAll);
+  $("chartMode").onchange = renderChart;
+  $("exSub").onchange = $("exMode").onchange = renderExceed;
+  $("btnTheme").onclick = () => {
+    const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
+    renderChart();
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderChart());
+}
+async function handleFiles(list){
+  for (const f of Array.from(list)) await loadFile(f);
+  $("file").value = "";
+  setFullPeriod(); renderAll();
+}
+
+buildUI();
+loadSample();
+</script>
+</body>
+</html>
